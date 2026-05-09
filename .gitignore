@@ -4,6 +4,7 @@
 .cache
 .config/
 .local/
+**/.nfs*
 .ollama/
 .profile
 .ssh/

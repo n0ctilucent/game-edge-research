@@ -1,0 +1,107 @@
+Moving to a **pandas-based Model Registry** is a significant upgrade for the Stargate control plane. While JSON is excellent for simple config, a DataFrame allows us to treat our distributed cluster as a queryable relational database. By integrating `networkx`, we can model the "Neural Topology" of the bitsmasher.net cluster, treating each AI model and host as a node in a graph.
+
+This setup will allow you to export `.gexf` files directly for **Gephi**, where you can manually analyze the "centrality" of your models—identifying which NPU-accelerated tasks are critical bottlenecks for the Emerald Mirror pipeline.
+
+### 1. Stargate Model Registry: Pandas Schema
+
+On the **Stargate** host, we will initialize a persistent DataFrame. We will use **Parquet** for storage in the `bitsmasher-stargate` repository via Git LFS, as it preserves pandas data types better than CSV.
+
+```python
+import pandas as pd
+import networkx as nx
+import datetime
+
+# Define the Registry Schema
+# This tracks the location, hardware target, and logical dependencies of every model.
+schema = {
+    'model_id': pd.Series(dtype='str'),        # Unique Name (e.g., 'voxel-refiner-j01')
+    'host_node': pd.Series(dtype='str'),       # Chonk, Skynet, Stargate, Edge-T, Edge-J01-04
+    'hardware': pd.Series(dtype='str'),        # Hailo-8L, Coral-TPU, CUDA, CPU, Vertex-AI
+    'format': pd.Series(dtype='str'),          # .hef, .tflite, .engine, .onnx, .cloud
+    'latency_ms': pd.Series(dtype='float'),    # Real-world inference speed
+    'vertex_enhancement': pd.Series(dtype='bool'), # Does this model pipe to Google Vertex?
+    'last_sync': pd.Series(dtype='datetime64[ns]'),
+    'upstream_deps': pd.Series(dtype='object') # List of model_ids this node depends on
+}
+
+registry_df = pd.DataFrame(schema)
+
+# Example Entry: The Emerald Mirror Voxel Refiner
+new_model = {
+    'model_id': 'greeble-refiner-v1',
+    'host_node': 'edge-j01',
+    'hardware': 'CUDA',
+    'format': '.engine',
+    'latency_ms': 42.5,
+    'vertex_enhancement': True,
+    'last_sync': datetime.datetime.now(),
+    'upstream_deps': ['t2bm-primitive-gen'] # Depends on Skynet's output
+}
+
+registry_df = pd.concat([registry_df, pd.DataFrame([new_model])], ignore_index=True)
+
+```
+
+---
+
+### 2. NetworkX Topology Mapping
+
+We will use `networkx` to transform the `upstream_deps` column into a directed graph. This allows us to visualize how data flows from **Vertex AI** through **Stargate** to the **Edge-J Cluster**.
+
+```python
+def generate_cluster_graph(df):
+    G = nx.DiGraph()
+    
+    for _, row in df.iterrows():
+        # Add the model as a node with hardware metadata
+        G.add_node(row['model_id'], 
+                   host=row['host_node'], 
+                   hw=row['hardware'], 
+                   vertex=row['vertex_enhancement'])
+        
+        # Create edges based on dependencies
+        for dep in row['upstream_deps']:
+            G.add_edge(dep, row['model_id'])
+            
+    return G
+
+cluster_graph = generate_cluster_graph(registry_df)
+
+```
+
+---
+
+### 3. Gephi Integration (The "Manual Graphing" Hook)
+
+To use **Gephi** for manual analysis (like detecting which Jetson node is overloaded), you can export the graph from Stargate using the following utility. This produces a file you can pull to your workstation for visual "Stress Analysis."
+
+```python
+def export_to_gephi(G, filename="stargate_topology.gexf"):
+    # Exporting in GEXF format ensures all attributes (HW, Node, Latency) 
+    # are readable by Gephi's ranking and coloring tools.
+    nx.write_gexf(G, filename)
+    print(f"[*] Cluster topology exported for Gephi: {filename}")
+
+export_to_gephi(cluster_graph)
+
+```
+
+---
+
+### 4. Updated Deployment Workflow (Host-Split)
+
+With the registry moving to pandas/Stargate, your deployment script (`deploy.sh`) in the `bitsmasher-stargate` repo should now function as follows:
+
+1. **Reasoning Phase:** Trigger `vertex_bridge.py`. It checks the `registry_df` for the $10 credit gate.
+2. **Graph Validation:** Run a `networkx` check: `nx.is_directed_acyclic_graph(G)`. This ensures no infinite loops in your greebling pipeline (e.g., Node-J01 waiting for Node-J02 which is waiting for Node-J01).
+3. **LFS Push:** Once the graph is validated, Stargate commits the updated `registry.parquet` and any new `.schem` templates to GitHub.
+4. **Edge Pull:** Chonk and the Edge-J cluster see the commit, pull the new binary world-state via Git LFS, and execute the injection.
+
+### A "Fun" Analysis Idea for Gephi
+
+Once you have the cluster graph in Gephi, try running the **"Betweenness Centrality"** algorithm.
+
+* **The Result:** Nodes with the highest score are your "Single Points of Failure."
+* **The Action:** If a specific Jetson node (like Edge-J03) has a high score, you should refactor your `bitsmasher-edge-j` code to load-balance its voxel tasks across the other three nodes.
+
+Shall I draft the **Vertex AI Credit Guard** logic to integrate with this new pandas schema?
