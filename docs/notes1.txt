@@ -1,0 +1,104 @@
+## Hardware & Performance Baseline
+Your SBC is now tuned to its maximum interactive potential for the **Mendel 5 (Eagle)** environment.
+
+***Computational Power**: The onboard Google Edge TPU provides **4 TOPS** of performance for machine learning tasks while consuming only **0.5W** per unit of computation.
+
+***System Core**: It runs on an **NXP i.MX 8M** quad-core ARM processor with **1GB LPDDR4** RAM.
+
+***Power Capability**: Unlike many SBCs limited to 15W, this board supports a **45W power design** to maintain stable I/O performance under heavy peripheral loads.
+
+***Thermal Health**: The included **active heatsink** is critical, as the i.MX 8M will throttle significantly if temperatures reach **80°C**.
+
+---
+
+## Optimization Summary
+To maintain the "snappy" CLI feel you’ve achieved, keep these configurations in mind:
+
+1.  **CPU Governor**: Permanently setting the governor to **performance** ensures the CPU stays at **1.5GHz**, eliminating the ramp-up lag during interactive use.
+
+
+2.  **Network Overhead**: Disabling **IPv6** and stopping chatty services like `avahi-daemon` and `mdt-keymaster` reduced background interrupts and SSH handshake latency.
+
+
+3.  **Shell Responsiveness**: Simplified autocomplete (by commenting out heavy `bash-completion` scripts in `.bashrc`) avoids long stalls when the system crawls the eMMC for binary paths.
+
+
+4.  **I/O Caution**: Polling directories on your **NFS mounts** (`chonk` and `stargate`) remains a primary source of potential lag if network jitter occurs.
+
+---
+
+## Recommended Related Web Sites
+For the next phase of your "bitsmasher.net" project, these resources are essential for edge deployment and model optimization.
+
+### 1. [Coral.ai](https://coral.ai/)
+This is the primary hub for the Edge TPU ecosystem.
+***Check here for**: Pre-compiled models (Object Detection, Pose Estimation) specifically optimized for your board, and the latest **LiteRT** (formerly TensorFlow Lite) documentation.
+
+### 2. [ASUS Tinker Board Developer Portal](https://tinker-board.asus.com/)
+The official site for the Tinker Edge T product line.
+***Check here for**: Updated OS images, **OS Flash Tool** updates, and specific API/SDK documentation for the Tinker series.
+
+### 3. [LiteRT (Google AI Edge)](https://ai.google.dev/edge/litert)
+Google’s rebranded home for TensorFlow Lite.
+***Check here for**: Guidance on the transition to the **LiteRT** runtime, which is the standard for 2026 performance and security.
+
+### 4. [Hackster.io - Tinker Board Community](https://www.hackster.io/asus-tinker-board)
+A massive community repository of user-submitted projects.
+
+### 5. [NXP i.MX 8M Series Documentation](https://www.nxp.com/products/processors-and-microcontrollers/arm-processors/i-mx-applications-processors/i-mx-8-processors/i-mx-8m-family:i.MX8M)
+Deep-level hardware documentation for your SoC.
+
+The short answer is **no, you should not standardize on just one, and yes, you can use both simultaneously with zero issues.** In the context of the `bitsmasher.net` lab and your recent `game-edge-research` repository, RCON and MQTT are not competing protocols; they are entirely different tools built for entirely different jobs.
+
+Think of **MQTT as the nervous system** of your architecture, and **RCON as the admin console** for your specific applications (like game servers).
+
+Here is a breakdown of how they compare, why they differ, and how they actually complement each other in your Tier 1 Core (`chonk`).
+
+---
+
+### 1. Core Paradigm: Publish/Subscribe vs. Request/Response
+
+| Feature | MQTT (Mosquitto) | RCON (Remote Console) |
+| --- | --- | --- |
+| **Architecture** | Publish/Subscribe (Asynchronous) | Client/Server (Synchronous) |
+| **Data Flow** | Many-to-Many (Brokered) | One-to-One (Direct) |
+| **Primary Use** | Streaming telemetry, event routing, IoT | Remote command execution |
+| **Payload** | Usually JSON (Lightweight) | Plain text commands / strings |
+| **State** | Always connected, stateful broker | Connect, execute, disconnect |
+| **Default Port** | 1883 (TCP) | Varies (e.g., 25575 for Minecraft, 27015 for Source) |
+
+---
+
+### 2. Deep Dive: When to use MQTT
+
+**Role:** The Event Router.
+MQTT is designed for high-throughput, low-latency background chatter. It doesn't care who is listening; it just routes messages.
+
+* **Use Case:** Your `edge-t` board streaming AI bounding-box data at 15 FPS.
+* **Use Case:** Your ESP32 badges subscribing to a topic waiting for a specific trigger to turn on an LED.
+* **Why it fails at RCON's job:** MQTT isn't designed to natively execute system commands or interact with a game server's internal engine. It just moves messages.
+
+### 3. Deep Dive: When to use RCON
+
+**Role:** The Direct Override.
+RCON was literally built for the gaming industry (originally by Valve for the Source engine) to allow server admins to execute console commands without having SSH access to the underlying Linux box.
+
+* **Use Case:** Executing `/kick pale_shadow` or `/give player item` on a game server running on `chonk`.
+* **Use Case:** Broadcasting a server-wide shutdown warning to connected players.
+* **Why it fails at MQTT's job:** RCON requires a persistent, synchronous TCP socket for a single command and expects a direct string response. If you tried to pipe 15 FPS video telemetry from the `edge-t` through RCON, the protocol would choke, and the receiving game server wouldn't know what to do with the data.
+
+---
+
+### The Verdict: The Skynet Synergy
+
+Because they operate on completely different ports and OSI layers, running Mosquitto (MQTT) and a Game Server with RCON on `chonk` at the same time will cause zero conflicts.
+
+In fact, the holy grail of your `game-edge-research` architecture is **bridging the two.**
+
+**Example of using both together:**
+
+1. **The Vision (MQTT):** You walk into the lab. The `edge-t` sees you and publishes an MQTT JSON payload: `{"class": "person", "confidence": 88}` to `chonk`.
+2. **The Bridge (Python):** A tiny Python script running in the background on `chonk` is subscribed to that MQTT topic. It sees the "person" alert.
+3. **The Action (RCON):** The Python script instantly opens an RCON connection to your active Minecraft/Palworld/Source server running on `chonk` and executes the command: `/broadcast "Warning: Physical movement detected in the lab!"`
+
+By utilizing both, your physical hardware (Edge AI + IoT) can seamlessly talk to your virtual environments (Game Servers). Keep MQTT for the telemetry pipelines, and keep RCON for the direct game-server administration!

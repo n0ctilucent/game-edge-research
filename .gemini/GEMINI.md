@@ -1,69 +1,96 @@
-# ASUS Tinker Edge T - Lab Reference & Optimization Guide
-**Project:** bitsmasher.net Edge AI Deployment
-**Hardware:** ASUS Tinker Edge T (i.MX 8MQ + Coral Edge TPU)
-[cite_start]**OS:** Mendel GNU/Linux 5 (Eagle) aarch64 [cite: 742]
+# ASUS Tinker Edge T - Skynet Tier 2 Node Documentation
+
+**Project:** bitsmasher.net Decentralized Edge AI Network ("Skynet")  
+**Hardware:** ASUS Tinker Edge T (i.MX 8MQ + Coral Edge TPU)  
+**OS:** Mendel GNU/Linux 5 (Eagle) aarch64  
+**Status:** 🟢 ONLINE / DEPLOYED  
 
 ---
 
-## 1. Hardware Specifications
-The Tinker Edge T is engineered for "cold and small" local AI inference, providing a robust architecture for sustained edge operations.
+## Overview
 
-* [cite_start]**CPU:** NXP i.MX 8M Quad-core Arm Cortex-A53 (1.5GHz) with a Cortex-M4F real-time core[cite: 912, 1337].
-* [cite_start]**Accelerator:** Internal Google Edge TPU over PCIe, capable of 4 TOPS at 0.5W per unit of computation[cite: 911, 1334].
-* [cite_start]**Memory/Storage:** 1GB LPDDR4 RAM and 8GB onboard eMMC[cite: 912, 1338].
-* [cite_start]**Thermals:** Active heatsink included to prevent the CPU from throttling, which occurs at 80°C[cite: 914, 1366].
-* [cite_start]**Power Delivery:** Custom 45W power design (12~19v DC) ensures full I/O performance and stability, overcoming the limits of standard 15W SBCs[cite: 913, 1361].
+The Skynet Tier 2 Node is a decentralized edge AI system operating on the [ASUS Tinker Edge T](https://tinker-board.asus.com/product/tinker-edge-t.html) board. This documentation details the node's architecture, hardware capabilities, system optimizations, and operational services. The primary goal of this node is to act as a local "brain" that ingests raw environmental data (video), performs heavy matrix mathematics locally using LiteRT, and transmits only lightweight intelligence (JSON telemetry) back to the Core server.
 
 ---
 
-## 2. Software & Ecosystem Shift
-* [cite_start]**Runtime Framework:** Google has transitioned the traditional TensorFlow Lite ecosystem to **LiteRT**, serving as the unified framework for high-performance, on-device machine learning and GenAI deployments[cite: 724, 1427].
-* [cite_start]**Operating System:** Runs Mendel Linux, a lightweight derivative of Debian specifically optimized for the Coral/Edge TPU ecosystem[cite: 750, 1340].
+## 1. Architecture
+
+The node fits into the broader bitsmasher.net network hierarchy:
+
+* **Tier 1 (The Core):** `chonk` (10.10.8.60) & `stargate`. Handles data aggregation, [Mosquitto MQTT](https://mosquitto.org/) routing, game server hosting (RCON), and long-term storage via NFS.
+* **Tier 2 (Tactical Edge):** `edge-t`. Runs [LiteRT](https://ai.google.dev/edge/litert) (formerly TensorFlow Lite) headless object detection at 4 TOPS using 0.5W.
+* **Tier 3 (Senses & Actuators):** 1080p Logitech webcams, MIPI-CSI modules, and ESP32/ESP8266 IoT badges.
 
 ---
 
-## 3. Lab Optimization Profile
-By default, the Mendel OS favors power-saving and background discovery tasks. To eliminate CLI latency and optimize the board for direct SSH management, the following configuration baseline was established:
+## 2. Hardware Specifications
 
-### System & Network
-* [cite_start]**CPU Governor:** Set permanently to `performance` to keep the CPU locked at 1.5GHz, eliminating keystroke ramp-up lag[cite: 915].
-* [cite_start]**IPv6 Disabled:** `net.ipv6.conf.all.disable_ipv6=1` applied via `sysctl` to speed up SSH handshakes and network polling[cite: 851, 916].
-* [cite_start]**Background Services:** Masked `avahi-daemon` (mDNS) and `mdt-keymaster` (Mendel Development Tool) to stop background polling and CPU interrupts[cite: 782, 916].
-
-### Shell Responsiveness
-* **Autocomplete Stalls:** The default `bash-completion` script crawls `/usr/bin` and mounted network paths upon hitting `TAB`. [cite_start]Commenting this out in `~/.bashrc` ensures instant autocomplete[cite: 868, 917].
-* [cite_start]**NFS Warning:** Mounting `chonk` and `stargate` via NFS creates shell latency if network jitter occurs during path resolution[cite: 901, 918]. 
+* **Compute:** NXP i.MX 8M Quad-core Arm Cortex-A53 (1.5GHz).
+* **Accelerator:** Internal [Google Coral Edge TPU](https://coral.ai/) (`/dev/apex_0`) over PCIe (Verified at 5GT/s, Width x1).
+* **Power & Thermals:** Custom 45W power design with active heatsink. CPU throttles at 80°C.
 
 ---
 
-## 4. Hardware Verification Scripts
+## 3. System Optimizations
 
-### A. Edge TPU Device Link
-The Edge TPU is connected via PCIe and utilizes the `apex` driver group.
-* [cite_start]**Device Node:** `/dev/apex_0`[cite: 749].
-* [cite_start]**PCIe Bus Speed:** Verified at `Speed 5GT/s, Width x1` via `lspci -d 1ac1:089a -vvv`[cite: 797, 842].
+To ensure zero CLI latency and maximum resources for the Edge TPU, the following "Cold & Small" profile optimizations are permanently applied:
 
-### B. System Health Diagnostic (`edge_t_diag.sh`)
-[cite_start]Since standard packages like `bc` and `zram-config` are stripped from the minimal Mendel image [cite: 821, 848][cite_start], this script uses `awk` for floating-point math to monitor thermals and hardware links[cite: 823, 850].
+* **CPU Governor:** Locked to `performance` mode to prevent downclocking.
+* **Network Latency:** IPv6 disabled globally via `sysctl` to speed up SSH and internal routing.
+* **Background Noise:** Mendel development services (`avahi-daemon`, `mdt-keymaster`) masked.
+* **Shell Speed:** Programmable `bash-completion` disabled in `~/.bashrc` to prevent eMMC/NFS crawling delays during autocomplete.
+* **Vision Dependencies:** Standard `python3-opencv` APT packages purged to avoid GUI bloat. Installed `opencv-python-headless` via `pip` to ensure a pure server-side video pipeline.
 
-```bash
-#!/bin/bash
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
+---
 
-echo -e "${GREEN}--- [ CPU & Thermals ] ---${NC}"
-GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)
-TEMP=$(cat /sys/class/thermal/thermal_zone0/temp)
-TEMP_C=$(awk "BEGIN {print $TEMP/1000}")
-echo "Governor: $GOV"
-echo "Temp:     ${TEMP_C}°C"
+## 4. The Skynet Vision Service
 
-echo -e "\n${GREEN}--- [ Edge TPU (Apex) Status ] ---${NC}"
-if [ -e /dev/apex_0 ]; then
-    LNK=$(sudo lspci -vv -s 0001:01:00.0 | grep "LnkSta:" | awk '{print $2, $3}')
-    echo -e "Device Node: ${GREEN}/dev/apex_0 detected${NC}"
-    echo "PCI Link:    $LNK"
-else
-    echo -e "Device Node: ${RED}NOT FOUND${NC}"
-fi
+The board runs a persistent `systemd` daemon that captures video, detects objects, and streams telemetry over the lab network.
+
+### A. The Payload
+* **Model:** SSD MobileNet V2 (COCO Quantized for Edge TPU).
+* **Detection Threshold:** Configured for >60% confidence.
+
+### B. The Uplink (MQTT)
+Telemetry is formatted as lightweight JSON and published to the Tier 1 Core.
+* **Broker:** `10.10.8.60` (`chonk`) on Port `1883`.
+* **Topic:** `skynet/tier2/edge-t/vision`
+* **Sample Output:** ```json
+    {"node": "edge-t", "timestamp": 1778348536.623, "detections": [{"class": "person", "confidence": 87.1}, {"class": "tv", "confidence": 61.7}]}
+    ```
+
+---
+
+## 5. Testing and Validation
+
+The hardware and software stack were validated using standardized Coral models to ensure native PCIe delegation to the Edge TPU:
+
+* **Image Classification Benchmark:** `mobilenet_v2_1.0_224_quant` executes natively on the TPU in **~2.89ms**.
+* **Live Video Pipeline Benchmark:** `ssd_mobilenet_v2_coco_quant` coupled with [OpenCV](https://opencv.org/) headless frame ingestion executes at **~15 FPS (66.7ms per frame)** on a live 1080p USB webcam feed.
+
+---
+
+## 6. Management and Troubleshooting
+
+### Service Management
+The vision service auto-restarts on failure. It can be managed with standard `systemctl` commands:
+
+* **View real-time AI detections & logs:** `journalctl -u skynet-vision.service -f`
+* **Restart the camera pipeline:** `sudo systemctl restart skynet-vision.service`
+* **Check service status:** `systemctl status skynet-vision.service`
+
+### Known Issues & Fixes
+
+* **Connection Refused (Errno 111):** If the service logs show MQTT connection refusals, ensure the Mosquitto broker on `chonk` has `listener 1883 0.0.0.0` configured in `/etc/mosquitto/conf.d/skynet.conf` and that `ufw allow 1883/tcp` is open.
+* **Vim Stair-Stepping:** When editing Python scripts on the headless node, always use `:set paste` in `vi` before pasting code to prevent whitespace indentation errors.
+* **Laggy Autocomplete:** Ensure NFS mounts (`/mnt/clusterfs`) are active. Network jitter on broken network paths will cause the shell to hang.
+
+---
+
+## 7. Future Development
+
+With the foundation verified, next steps for the bitsmasher.net lab include:
+
+* **Database Ingestion:** Configure a listener on `chonk` to parse the MQTT JSON and log timestamps/classes to a SQL database for historical analysis.
+* **IoT Actuation:** Flash lab ESP32 badges to subscribe to the MQTT topic and trigger NeoPixels/relays based on specific detections (e.g., flash red when `class: person` is detected).
+* **Game Server Synergy:** Build a Python bridge on `chonk` that reads the physical MQTT telemetry and leverages RCON to broadcast in-game alerts (e.g., triggering a `/broadcast "Physical movement detected!"` in Minecraft when someone enters the lab).

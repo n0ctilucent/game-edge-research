@@ -1,0 +1,11 @@
+.Xauthority
+.bash_history
+.bash_logout
+.cache
+.config/
+.local/
+.ollama/
+.profile
+.ssh/
+.viminfo
+.wget-hsts

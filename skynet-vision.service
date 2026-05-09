@@ -1,0 +1,15 @@
+[Unit]
+Description=Skynet Edge TPU Vision Uplink
+After=network.target
+
+[Service]
+Type=simple
+User=mendel
+Environment="PATH=/home/mendel/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+WorkingDirectory=/home/mendel/src
+ExecStart=/usr/bin/python3 /home/mendel/src/skynet_uplink.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
