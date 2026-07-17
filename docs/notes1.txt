@@ -102,3 +102,129 @@ In fact, the holy grail of your `game-edge-research` architecture is **bridging 
 3. **The Action (RCON):** The Python script instantly opens an RCON connection to your active Minecraft/Palworld/Source server running on `chonk` and executes the command: `/broadcast "Warning: Physical movement detected in the lab!"`
 
 By utilizing both, your physical hardware (Edge AI + IoT) can seamlessly talk to your virtual environments (Game Servers). Keep MQTT for the telemetry pipelines, and keep RCON for the direct game-server administration!
+
+Transitioning to a compartmentalized repository structure within the **Pale Shadow** GitHub organization is the correct move for a cluster of this complexity. By isolating host-specific logic and using **Git LFS** for binary weights and world data, you ensure that Skynet's NPU models don't bloat Stargate's control-plane logic, and your Minecraft region files are safely versioned.
+
+### 1. Proposed Repository Topology
+
+| Repository Name | Host Role | Core Binaries (LFS Tracked) |
+| --- | --- | --- |
+| `bitsmasher-chonk` | **Execution Layer** | `.mca` (Region), `.dat` (NBT), `.jar` (Paper/Forge) |
+| `bitsmasher-skynet` | **AI Orchestrator** | `.hef` (Hailo-8L), `.onnx` (Pre-quantized models) |
+| `bitsmasher-stargate` | **Control Plane** | `models.json` (Registry), `vault_backups.sql` |
+| `bitsmasher-edge-t` | **Vision Hub** | `.tflite` (Coral TPU), `.libedgetpu` (Specific drivers) |
+| `bitsmasher-edge-j` | **Voxel Cluster** | `.engine` (TensorRT), `.cuda` (Build artifacts) |
+| `bitsmasher-core` | **Shared Library** | MCP Schemas, `test/` suite, protobuf definitions |
+
+---
+
+### 2. Implementation Strategy: Storage and Synchronization
+
+To maintain a "Single Source of Truth" without manual file-shuffling, implement the following **Git LFS + Hydration** workflow:
+
+**A. Strict `.gitattributes` Configuration**
+Every host repository must explicitly define its LFS targets to prevent accidental inclusion of binaries in the standard git tree, which causes permanent repo bloat.
+
+```bash
+# Example for bitsmasher-skynet
+*.hef filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.schem filter=lfs diff=lfs merge=lfs -text
+
+```
+
+**B. The "World-State Lockdown" Hook**
+For `bitsmasher-chonk`, source code and world-state are inextricably linked. Before any `git push` or automated backup, the repository must trigger an RCON handshake to prevent hashing blocks that are currently in the JVM's write-cache.
+
+* **Workflow**: Run `rcon.sh "save-off"` $\rightarrow$ `rcon.sh "save-all"` $\rightarrow$ `git add .` $\rightarrow$ `git commit` $\rightarrow$ `rcon.sh "save-on"`.
+
+---
+
+### 3. Deployment Pipeline: From Vertex to Chonk
+
+With the new Jetson cluster nodes and Stargate registry, your deployment should follow a **"Triggered Pull"** model to minimize latency.
+
+**Step 1: Vertex Reasoning (The Creative Burst)**
+When you trigger an Emerald Mirror "Style Mutation" via Stargate, the **Vertex AI Bridge** generates the stylistic JSON. Stargate updates the **Model Registry** (`models.json`) with a new version ID.
+
+**Step 2: Distributed Hydration**
+Stargate issues an MCP "Sync" command to the cluster.
+
+* **Skynet & Edge Nodes**: Execute `git pull` followed by `git lfs pull`. This ensures the local filesystem contains the raw binary data (e.g., the new `.hef` or `.tflite` weights) rather than just LFS text pointers.
+* **Validation**: The `test/` suite (pulled from `bitsmasher-core`) runs locally to confirm hardware acceleration is active (e.g., `hailortcli run model.hef`).
+
+**Step 3: Voxel Math & Injection**
+
+1. **Skynet** generates the base voxel mass.
+2. **Edge-J Cluster** (the four Jetsons) pulls the base mass via the shared `clusterfs`, performs the heavy CUDA greebling, and writes the refined `.schem` back.
+3. **Chonk** receives the final RCON `/place` command from Stargate.
+
+---
+
+### 4. Cold Storage & Recovery
+
+By utilizing the **Pale Shadow** organization, you can leverage GitHub's **"Releases"** for point-in-time snapshots of the entire cluster.
+
+* **Recommendation**: Use a monthly **"Snapshot Workflow"** where all repositories are tagged (e.g., `v2026.05.snapshot`). This stores the specific combination of `.schem` files, `.hef` weights, and Minecraft `.mca` files that were stable during that month’s experiments.
+
+### Final Refinement for Vertex AI Goal
+
+To best use your $10/mo credits, incorporate a **"Cost-Aware Token Gate"** in the Stargate `vertex_bridge.py`. It should check the registry for the current monthly usage before dispatching a reasoning task. If you reach $9, the bridge should automatically pivot to the local **Ollama (Llama 3)** instance on Chonk for greebling logic until the next billing cycle.
+
+
+Moving the **Model Registry** to the **Stargate** host is a strategically sound decision. As the control plane and MCP hub, Stargate is the logical "brain" for tracking versioning and deployment metadata across the cluster. This allows Skynet to remain focused on high-throughput orchestration and NPU-heavy tasks.
+
+Furthermore, integrating the four recovered **NVIDIA Jetson 2GB nodes** creates a dedicated **"Voxel Processing Tier"** that bridges the gap between local primitive generation and high-level Vertex AI reasoning.
+
+### 1. Updated Node Topology & Distributed Roles
+
+With the new hardware and the registry migration, our environment now operates in a tiered compute structure:
+
+* **Stargate (Control Plane & Registry):** Hosts the **Global Model Registry**. It tracks model versions (e.g., `.hef` for Skynet, `.tflite` for Edge-T, and `.engine` for Jetsons). It acts as the gateway to **Vertex AI**, managing the secure API handshake and credit usage.
+* **Skynet (Orchestrator):** Manages the Text-to-Building (T2BM) logic. It generates the "Primitive Voxel Mass" (the rough shape) and routes it to the processing tier.
+* **Edge-J Cluster (Nodes 01-04 - Voxel Processing):** The four NVIDIA Jetson 2GB nodes. These are assigned to **"Heavy Voxel Math."** They take primitive shapes from Skynet, calculate structural support, and handle block-palette mapping (e.g., converting "Stone" to a mix of Andesite and Cracked Stone Bricks).
+* **Edge-T (Vision Hub):** Uses the Coral Edge TPU to verify the final placement on the server, ensuring no block-glitches or lighting-update lag.
+* **Chonk (Execution Layer):** Contains the **AI Testing Field**, a protected 256x256 zone (coordinates defined in `server.properties`) where Vertex-enhanced schematics are injected via RCON.
+
+---
+
+### 2. The Vertex AI "Emerald Mirror" Pipeline
+
+This workflow realizes your goal of using Vertex AI for stylistic enhancement while keeping voxel math local.
+
+**Step 1: Local Primitive Generation (Skynet)**
+Skynet’s T2BM pipeline generates a low-fidelity `.schem` file based on a player's request. This file is just the "Foundation."
+
+**Step 2: Distributed Refinement (Edge-J Cluster)**
+The Foundation schematic is pushed via the `mdt-keymaster` SSH bridge to the Jetson cluster. Each node handles a quadrant of the structure, calculating where "Greebles" (details like buttons, fences, and depth) can physically fit without violating Minecraft's block-placement rules.
+
+**Step 3: Stylistic Enhancement (Vertex AI via Stargate)**
+Stargate extracts the **Metadata Manifest** of the structure (e.g., "Circular Tower, 20m high, Industrial Style") and sends it to **Vertex AI (Gemini 1.5 Pro)**.
+
+* **The Prompt:** Vertex AI is asked to "Reason about the environmental context." For example: *"Given an industrial tower in a snowy biome, what block mutations would suggest thermal venting and weathering?"*
+* **The Return:** Vertex returns a **Stylistic Delta** (a JSON list of block IDs and coordinate offsets).
+
+**Step 4: Final Injection (Chonk)**
+Stargate merges the Jetson-calculated greebles with the Vertex-reasoned stylistic mutations into a final `.schem` file. This is validated by `test_schematic_boundary_safety.py` and deployed to the **AI Testing Field** on Chonk via RCON.
+
+---
+
+### 3. Fun ML Learning: "The Hallucination Filter"
+
+To maximize the fun while learning ML vision, we can implement a **"Style Verification Loop"** using the new Jetson nodes and Vertex AI.
+
+* **The Technique:** **Image-to-Voxel Classification.**
+* **The Fun Part:** Take a screenshot of a player-built house on Chonk. Feed it to one of the Jetson nodes running a small quantized vision model to identify the "Vibe."
+* **The Learning Goal:** Send that "Vibe" classification to Vertex AI. Ask Vertex to "hallucinate" a voxel expansion of that house.
+* **The Outcome:** The server will automatically build a "Shadow Version" of the player's house in the AI Testing Field, showing them what the AI *thinks* they were trying to build. This teaches you how to map 2D visual data into 3D voxel coordinates.
+
+---
+
+### 4. Immediate Action Items for Documentation
+
+1. **Registry Initialization:** Create `/mnt/clusterfs/registry/models.json` on Stargate. Define the schema to include `last_trained`, `target_node`, and `vertex_id`.
+2. **Edge-J Deployment:** Flash the 2GB Jetsons with a lightweight JetPack image. Deploy the `voxel_refiner.py` service.
+3. **Vertex API Bridge:** Update `src/stargate/vertex_bridge.py` to use your Google Skills credits. Implement a throttle to ensure you don't exceed your $10/mo budget during heavy testing.
+4. **Field Definition:** Mark the "AI Testing Field" on Chonk with corner markers (Lapis blocks) and update the `test_schematic_boundary_safety.py` to target these coordinates exclusively.
+
+This hybrid local/cloud setup is the most efficient way to learn advanced ML vision without overwhelming your local CPU resources. Ready to initialize the Stargate registry?
